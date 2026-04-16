@@ -97,6 +97,98 @@
   color: var(--text-h);
 }
 
+.filter-multiselect {
+  position: relative;
+}
+
+.filter-multiselect-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6b7280;
+}
+
+.filter-multiselect-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text-h);
+  cursor: pointer;
+  text-align: left;
+}
+
+.filter-multiselect-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-multiselect-caret {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.filter-multiselect-panel {
+  position: absolute;
+  z-index: 30;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  padding: 6px 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+
+.filter-multiselect-scroll {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.filter-multiselect-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--text-h);
+  cursor: pointer;
+  user-select: none;
+}
+
+.filter-multiselect-row:hover {
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.filter-multiselect-row input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.filter-multiselect-row span {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.filter-multiselect-row--all {
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  padding-bottom: 8px;
+}
+
 .clear-filters {
   margin-left: auto;
   padding: 8px 14px;
@@ -408,7 +500,8 @@ tbody tr:nth-child(even) {
   }
 
   .filters .filter-group select,
-  .filters .filter-group input[type='date'] {
+  .filters .filter-group input[type='date'],
+  .filters .filter-multiselect-trigger {
     width: 100%;
     max-width: 22rem;
     box-sizing: border-box;

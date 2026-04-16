@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   PointerSensor,
@@ -9,6 +9,7 @@ import {
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import Papa from 'papaparse'
+import spaceMissionsCsvUrl from '../../space_missions.csv?url'
 import {
   LineChart,
   Line,
@@ -31,6 +32,98 @@ const STATUS_COLORS = {
   Failure: '#dc2626',
   'Partial Failure': '#f97316',
   'Prelaunch Failure': '#6b7280',
+}
+
+const MISSION_STATUS_OPTIONS = ['Success', 'Failure', 'Partial Failure', 'Prelaunch Failure']
+
+const EMPTY_MULTI_FILTER = { all: true, values: [] }
+
+function useClickOutside(ref, handler, active) {
+  useEffect(() => {
+    if (!active) return
+    function onPointerDown(e) {
+      if (ref.current && !ref.current.contains(e.target)) handler()
+    }
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onPointerDown, true)
+  }, [ref, handler, active])
+}
+
+function CheckboxMultiDropdown({ id, label, options, value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  const close = useCallback(() => setOpen(false), [])
+  useClickOutside(wrapRef, close, open)
+
+  const summary = value.all
+    ? 'All'
+    : value.values.length === 0
+      ? 'None selected'
+      : value.values.length === 1
+        ? value.values[0]
+        : `${value.values.length} selected`
+
+  const toggleAll = (checked) => {
+    onChange(checked ? { all: true, values: [] } : { all: false, values: [] })
+  }
+
+  const toggleOption = (opt, checked) => {
+    if (value.all && checked) {
+      onChange({ all: false, values: [opt] })
+      return
+    }
+    if (!checked) {
+      onChange({ all: false, values: value.values.filter((x) => x !== opt) })
+      return
+    }
+    onChange({ all: false, values: [...new Set([...value.values, opt])] })
+  }
+
+  return (
+    <div className="filter-group filter-multiselect" ref={wrapRef}>
+      <span className="filter-multiselect-label" id={`${id}-label`}>
+        {label}
+      </span>
+      <button
+        type="button"
+        id={id}
+        className="filter-multiselect-trigger"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-labelledby={`${id}-label`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="filter-multiselect-summary">{summary}</span>
+        <span className="filter-multiselect-caret" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div className="filter-multiselect-panel" role="listbox" aria-multiselectable="true">
+          <label className="filter-multiselect-row filter-multiselect-row--all">
+            <input
+              type="checkbox"
+              checked={value.all}
+              onChange={(e) => toggleAll(e.target.checked)}
+            />
+            <span>ALL</span>
+          </label>
+          <div className="filter-multiselect-scroll">
+            {options.map((opt) => (
+              <label key={opt} className="filter-multiselect-row">
+                <input
+                  type="checkbox"
+                  checked={!value.all && value.values.includes(opt)}
+                  onChange={(e) => toggleOption(opt, e.target.checked)}
+                />
+                <span>{opt}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 /** Last segment of Location is usually the country; fix known edge cases. */
@@ -189,9 +282,9 @@ function App() {
   const [error, setError] = useState(null)
   const [theme, setTheme] = useState('dark')
 
-  const [companyFilter, setCompanyFilter] = useState('All')
-  const [statusFilter, setStatusFilter] = useState('All')
-  const [countryFilter, setCountryFilter] = useState('All')
+  const [companyFilter, setCompanyFilter] = useState(EMPTY_MULTI_FILTER)
+  const [statusFilter, setStatusFilter] = useState(EMPTY_MULTI_FILTER)
+  const [countryFilter, setCountryFilter] = useState(EMPTY_MULTI_FILTER)
   const [startDateFilter, setStartDateFilter] = useState('')
   const [endDateFilter, setEndDateFilter] = useState('')
   const [sortField, setSortField] = useState('Date')
@@ -227,7 +320,7 @@ function App() {
   }, [theme])
 
   useEffect(() => {
-    Papa.parse('/space_missions.csv', {
+    Papa.parse(spaceMissionsCsvUrl, {
       header: true,
       download: true,
       skipEmptyLines: true,
@@ -253,13 +346,13 @@ function App() {
     })
   }, [])
 
-  const allCompanies = useMemo(
-    () => ['All', ...Array.from(new Set(missions.map((m) => m.Company))).sort()],
+  const companyOptions = useMemo(
+    () => Array.from(new Set(missions.map((m) => m.Company))).sort(),
     [missions],
   )
 
-  const allCountries = useMemo(
-    () => ['All', ...Array.from(new Set(missions.map((m) => m.LaunchCountry))).sort()],
+  const countryOptions = useMemo(
+    () => Array.from(new Set(missions.map((m) => m.LaunchCountry))).sort(),
     [missions],
   )
 
@@ -273,9 +366,18 @@ function App() {
   const filteredMissions = useMemo(() => {
     return missions
       .filter((m) => {
-        if (companyFilter !== 'All' && m.Company !== companyFilter) return false
-        if (statusFilter !== 'All' && m.MissionStatus !== statusFilter) return false
-        if (countryFilter !== 'All' && m.LaunchCountry !== countryFilter) return false
+        if (!companyFilter.all) {
+          if (companyFilter.values.length === 0) return false
+          if (!companyFilter.values.includes(m.Company)) return false
+        }
+        if (!statusFilter.all) {
+          if (statusFilter.values.length === 0) return false
+          if (!statusFilter.values.includes(m.MissionStatus)) return false
+        }
+        if (!countryFilter.all) {
+          if (countryFilter.values.length === 0) return false
+          if (!countryFilter.values.includes(m.LaunchCountry)) return false
+        }
         if (startDateFilter) {
           const start = new Date(`${startDateFilter}T00:00:00`)
           if (m.DateObj < start) return false
@@ -548,59 +650,38 @@ function App() {
       </header>
 
       <section className="filters">
-        <div className="filter-group">
-          <label htmlFor="company-select">Company</label>
-          <select
-            id="company-select"
-            value={companyFilter}
-            onChange={(e) => {
-              setCompanyFilter(e.target.value)
-              setPage(1)
-            }}
-          >
-            {allCompanies.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
+        <CheckboxMultiDropdown
+          id="filter-company"
+          label="Company"
+          options={companyOptions}
+          value={companyFilter}
+          onChange={(next) => {
+            setCompanyFilter(next)
+            setPage(1)
+          }}
+        />
 
-        <div className="filter-group">
-          <label htmlFor="status-select">Mission status</label>
-          <select
-            id="status-select"
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value)
-              setPage(1)
-            }}
-          >
-            <option value="All">All</option>
-            <option value="Success">Success</option>
-            <option value="Failure">Failure</option>
-            <option value="Partial Failure">Partial Failure</option>
-            <option value="Prelaunch Failure">Prelaunch Failure</option>
-          </select>
-        </div>
+        <CheckboxMultiDropdown
+          id="filter-status"
+          label="Mission status"
+          options={MISSION_STATUS_OPTIONS}
+          value={statusFilter}
+          onChange={(next) => {
+            setStatusFilter(next)
+            setPage(1)
+          }}
+        />
 
-        <div className="filter-group">
-          <label htmlFor="country-select">Launch country</label>
-          <select
-            id="country-select"
-            value={countryFilter}
-            onChange={(e) => {
-              setCountryFilter(e.target.value)
-              setPage(1)
-            }}
-          >
-            {allCountries.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
+        <CheckboxMultiDropdown
+          id="filter-country"
+          label="Launch country"
+          options={countryOptions}
+          value={countryFilter}
+          onChange={(next) => {
+            setCountryFilter(next)
+            setPage(1)
+          }}
+        />
 
         <div className="filter-group">
           <label htmlFor="start-date">Start date</label>
@@ -632,9 +713,9 @@ function App() {
           type="button"
           className="clear-filters"
           onClick={() => {
-            setCompanyFilter('All')
-            setStatusFilter('All')
-            setCountryFilter('All')
+            setCompanyFilter(EMPTY_MULTI_FILTER)
+            setStatusFilter(EMPTY_MULTI_FILTER)
+            setCountryFilter(EMPTY_MULTI_FILTER)
             setStartDateFilter('')
             setEndDateFilter('')
             setPage(1)

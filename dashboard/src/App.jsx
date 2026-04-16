@@ -1,4 +1,13 @@
 import { memo, useEffect, useMemo, useState } from 'react'
+import {
+  DndContext,
+  PointerSensor,
+  closestCorners,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import Papa from 'papaparse'
 import {
   LineChart,
@@ -22,6 +31,29 @@ const STATUS_COLORS = {
   Failure: '#dc2626',
   'Partial Failure': '#f97316',
   'Prelaunch Failure': '#6b7280',
+}
+
+/** Last segment of Location is usually the country; fix known edge cases. */
+const LAUNCH_COUNTRY_OVERRIDES = {
+  'New Mexico': 'USA',
+  'Gran Canaria': 'Spain',
+  'Pacific Missile Range Facility': 'USA',
+  'Shahrud Missile Test Site': 'Iran',
+}
+
+const LAUNCH_SEA_OR_OCEAN = new Set(['Pacific Ocean', 'Barents Sea', 'Yellow Sea'])
+
+function getLaunchCountry(location) {
+  if (!location || typeof location !== 'string') return 'Unknown'
+  const parts = location
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+  if (!parts.length) return 'Unknown'
+  let raw = parts[parts.length - 1]
+  if (LAUNCH_COUNTRY_OVERRIDES[raw]) return LAUNCH_COUNTRY_OVERRIDES[raw]
+  if (LAUNCH_SEA_OR_OCEAN.has(raw)) return 'International waters'
+  return raw
 }
 
 const RADIAN = Math.PI / 180
@@ -65,6 +97,62 @@ function renderMissionOutcomePercentLabel({ cx, cy, midAngle, outerRadius, perce
   )
 }
 
+const CHART_PANEL_IDS = ['year', 'companies', 'outcomes', 'countries']
+
+const CHART_TITLES = {
+  year: 'Launches per year',
+  companies: 'Top companies by mission count',
+  outcomes: 'Mission outcomes',
+  countries: 'Launches per country',
+}
+
+function parseChartOrderFromStorage() {
+  try {
+    const raw = localStorage.getItem('dashboard-chart-order')
+    if (!raw) return [...CHART_PANEL_IDS]
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed) || parsed.length !== CHART_PANEL_IDS.length) {
+      return [...CHART_PANEL_IDS]
+    }
+    const valid = new Set(CHART_PANEL_IDS)
+    if (!parsed.every((x) => valid.has(x))) return [...CHART_PANEL_IDS]
+    return parsed
+  } catch {
+    return [...CHART_PANEL_IDS]
+  }
+}
+
+function SortableChartCard({ id, title, children }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+  })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 4 : undefined,
+  }
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`chart-card${isDragging ? ' chart-card--dragging' : ''}`}
+    >
+      <div
+        className="chart-card-drag"
+        title="Drag to reorder charts"
+        {...attributes}
+        {...listeners}
+      >
+        <span className="chart-drag-handle" aria-hidden="true">
+          ⋮⋮
+        </span>
+        <h2>{title}</h2>
+      </div>
+      {children}
+    </div>
+  )
+}
+
 const MissionOutcomesChart = memo(function MissionOutcomesChart({ data }) {
   return (
     <ResponsiveContainer width="100%" height={260}>
@@ -103,12 +191,24 @@ function App() {
 
   const [companyFilter, setCompanyFilter] = useState('All')
   const [statusFilter, setStatusFilter] = useState('All')
+  const [countryFilter, setCountryFilter] = useState('All')
   const [startDateFilter, setStartDateFilter] = useState('')
   const [endDateFilter, setEndDateFilter] = useState('')
   const [sortField, setSortField] = useState('Date')
   const [sortDirection, setSortDirection] = useState('desc')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(15)
+  const [chartOrder, setChartOrder] = useState(parseChartOrderFromStorage)
+
+  const chartSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+  )
+
+  useEffect(() => {
+    localStorage.setItem('dashboard-chart-order', JSON.stringify(chartOrder))
+  }, [chartOrder])
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem('dashboard-theme')
@@ -140,6 +240,7 @@ function App() {
               ...row,
               DateObj: dateObj,
               Year: dateObj.getFullYear(),
+              LaunchCountry: getLaunchCountry(row.Location),
             }
           })
         setMissions(enriched)
@@ -157,6 +258,11 @@ function App() {
     [missions],
   )
 
+  const allCountries = useMemo(
+    () => ['All', ...Array.from(new Set(missions.map((m) => m.LaunchCountry))).sort()],
+    [missions],
+  )
+
   function parsePrice(priceValue) {
     if (!priceValue || !priceValue.trim()) return Number.POSITIVE_INFINITY
     const normalized = priceValue.replace(/[$,]/g, '')
@@ -169,6 +275,7 @@ function App() {
       .filter((m) => {
         if (companyFilter !== 'All' && m.Company !== companyFilter) return false
         if (statusFilter !== 'All' && m.MissionStatus !== statusFilter) return false
+        if (countryFilter !== 'All' && m.LaunchCountry !== countryFilter) return false
         if (startDateFilter) {
           const start = new Date(`${startDateFilter}T00:00:00`)
           if (m.DateObj < start) return false
@@ -199,6 +306,7 @@ function App() {
     missions,
     companyFilter,
     statusFilter,
+    countryFilter,
     startDateFilter,
     endDateFilter,
     sortField,
@@ -253,6 +361,35 @@ function App() {
     }))
   }, [filteredMissions])
 
+  function handleChartsDragEnd(event) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    setChartOrder((items) => {
+      const oldIndex = items.indexOf(active.id)
+      const newIndex = items.indexOf(over.id)
+      if (oldIndex === -1 || newIndex === -1) return items
+      return arrayMove(items, oldIndex, newIndex)
+    })
+  }
+
+  const missionsByLaunchCountry = useMemo(() => {
+    const TOP_N = 12
+    const counts = new Map()
+    filteredMissions.forEach((m) => {
+      const c = m.LaunchCountry || 'Unknown'
+      counts.set(c, (counts.get(c) || 0) + 1)
+    })
+    const items = Array.from(counts.entries()).map(([name, count]) => ({ name, count }))
+    items.sort((a, b) => b.count - a.count)
+    if (items.length <= TOP_N) {
+      return [...items].reverse()
+    }
+    const top = items.slice(0, TOP_N)
+    const otherSum = items.slice(TOP_N).reduce((sum, row) => sum + row.count, 0)
+    if (otherSum > 0) top.push({ name: 'Other', count: otherSum })
+    return [...top].reverse()
+  }, [filteredMissions])
+
   const totalPages = Math.max(1, Math.ceil(filteredMissions.length / pageSize))
   const currentPage = Math.min(page, totalPages)
   const pagedMissions = filteredMissions.slice(
@@ -283,6 +420,71 @@ function App() {
     const minute = String(dateObj.getMinutes()).padStart(2, '0')
     const second = String(dateObj.getSeconds()).padStart(2, '0')
     return `${year}-${month}-${day} ${hour}:${minute}:${second}`
+  }
+
+  function renderChartPanel(panelId) {
+    switch (panelId) {
+      case 'year':
+        return (
+          <ResponsiveContainer width="100%" height={260}>
+            <LineChart data={missionsByYear} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="year" tick={{ fontSize: 10 }} />
+              <YAxis />
+              <Tooltip />
+              <Line type="monotone" dataKey="count" stroke="#4f46e5" strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        )
+      case 'companies':
+        return (
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart
+              data={missionsByCompany}
+              margin={{ top: 10, right: 10, left: 0, bottom: 60 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 10 }}
+                angle={-40}
+                textAnchor="end"
+                interval={0}
+              />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="count" fill="#0ea5e9" />
+            </BarChart>
+          </ResponsiveContainer>
+        )
+      case 'outcomes':
+        return <MissionOutcomesChart data={missionsByStatus} />
+      case 'countries':
+        return (
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart
+              layout="vertical"
+              data={missionsByLaunchCountry}
+              margin={{ top: 6, right: 16, left: 4, bottom: 6 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={false} />
+              <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={118}
+                tick={{ fontSize: 10 }}
+                tickLine={false}
+                axisLine={false}
+              />
+              <Tooltip formatter={(value) => [value, 'Launches']} labelFormatter={(label) => label} />
+              <Bar dataKey="count" fill="#7c3aed" name="Launches" radius={[0, 4, 4, 0]} maxBarSize={22} />
+            </BarChart>
+          </ResponsiveContainer>
+        )
+      default:
+        return null
+    }
   }
 
   if (loading) {
@@ -383,6 +585,24 @@ function App() {
         </div>
 
         <div className="filter-group">
+          <label htmlFor="country-select">Launch country</label>
+          <select
+            id="country-select"
+            value={countryFilter}
+            onChange={(e) => {
+              setCountryFilter(e.target.value)
+              setPage(1)
+            }}
+          >
+            {allCountries.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="filter-group">
           <label htmlFor="start-date">Start date</label>
           <input
             id="start-date"
@@ -414,6 +634,7 @@ function App() {
           onClick={() => {
             setCompanyFilter('All')
             setStatusFilter('All')
+            setCountryFilter('All')
             setStartDateFilter('')
             setEndDateFilter('')
             setPage(1)
@@ -442,47 +663,21 @@ function App() {
         </div>
       </section>
 
-      <section className="charts-grid">
-        <div className="chart-card">
-          <h2>Launches per year</h2>
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={missionsByYear} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="year" tick={{ fontSize: 10 }} />
-              <YAxis />
-              <Tooltip />
-              <Line type="monotone" dataKey="count" stroke="#4f46e5" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="chart-card">
-          <h2>Top companies by mission count</h2>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart
-              data={missionsByCompany}
-              margin={{ top: 10, right: 10, left: 0, bottom: 60 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis
-                dataKey="name"
-                tick={{ fontSize: 10 }}
-                angle={-40}
-                textAnchor="end"
-                interval={0}
-              />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="count" fill="#0ea5e9" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="chart-card">
-          <h2>Mission outcomes</h2>
-          <MissionOutcomesChart data={missionsByStatus} />
-        </div>
-      </section>
+      <DndContext
+        sensors={chartSensors}
+        collisionDetection={closestCorners}
+        onDragEnd={handleChartsDragEnd}
+      >
+        <SortableContext items={chartOrder} strategy={rectSortingStrategy}>
+          <section className="charts-grid">
+            {chartOrder.map((panelId) => (
+              <SortableChartCard key={panelId} id={panelId} title={CHART_TITLES[panelId]}>
+                {renderChartPanel(panelId)}
+              </SortableChartCard>
+            ))}
+          </section>
+        </SortableContext>
+      </DndContext>
 
       <section className="table-section">
         <header className="table-header">

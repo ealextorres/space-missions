@@ -168,6 +168,17 @@
   margin: 0 0 8px;
 }
 
+.pie-outcome-label-connector {
+  stroke: var(--border);
+  stroke-width: 1px;
+}
+
+.pie-outcome-label-text {
+  fill: var(--text-h);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .table-section {
   border-radius: 12px;
   border: 1px solid var(--border);
@@ -261,6 +272,27 @@ tbody tr:nth-child(even) {
 .status-prelaunch-failure {
   background: rgba(107, 114, 128, 0.15);
   color: #e5e7eb;
+}
+
+/* Light mode: darker pill text for readable contrast on pale table rows */
+:root[data-theme='light'] .status-success {
+  background: rgba(22, 163, 74, 0.14);
+  color: #166534;
+}
+
+:root[data-theme='light'] .status-failure {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+
+:root[data-theme='light'] .status-partial-failure {
+  background: rgba(249, 115, 22, 0.14);
+  color: #c2410c;
+}
+
+:root[data-theme='light'] .status-prelaunch-failure {
+  background: rgba(75, 85, 99, 0.12);
+  color: #374151;
 }
 
 .pagination {

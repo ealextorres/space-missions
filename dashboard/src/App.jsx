@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import Papa from 'papaparse'
 import {
   LineChart,
@@ -23,6 +23,77 @@ const STATUS_COLORS = {
   'Partial Failure': '#f97316',
   'Prelaunch Failure': '#6b7280',
 }
+
+const RADIAN = Math.PI / 180
+
+/** External % labels with elbow lines so slice labels do not stack on the pie. */
+function renderMissionOutcomePercentLabel({ cx, cy, midAngle, outerRadius, percent }) {
+  if (percent == null || percent <= 0) return null
+  if (percent < 0.012) return null
+
+  const label = `${(percent * 100).toFixed(1)}%`
+  const sin = Math.sin(-RADIAN * midAngle)
+  const cos = Math.cos(-RADIAN * midAngle)
+  const sx = cx + (outerRadius + 2) * cos
+  const sy = cy + (outerRadius + 2) * sin
+  const mx = cx + (outerRadius + 10) * cos
+  const my = cy + (outerRadius + 10) * sin
+  const isRight = cos >= 0
+  const ex = mx + (isRight ? 1 : -1) * 14
+  const ey = my
+  const textX = ex + (isRight ? 3 : -3)
+  const textAnchor = isRight ? 'start' : 'end'
+
+  return (
+    <g className="pie-outcome-label-group">
+      <path
+        d={`M${sx},${sy}L${mx},${my}L${ex},${ey}`}
+        className="pie-outcome-label-connector"
+        fill="none"
+        strokeLinecap="round"
+      />
+      <text
+        x={textX}
+        y={ey}
+        dy="0.35em"
+        textAnchor={textAnchor}
+        className="pie-outcome-label-text"
+      >
+        {label}
+      </text>
+    </g>
+  )
+}
+
+const MissionOutcomesChart = memo(function MissionOutcomesChart({ data }) {
+  return (
+    <ResponsiveContainer width="100%" height={260}>
+      <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+        <Pie
+          data={data}
+          dataKey="value"
+          nameKey="status"
+          cx="50%"
+          cy="50%"
+          outerRadius={72}
+          paddingAngle={1.2}
+          labelLine={false}
+          label={renderMissionOutcomePercentLabel}
+          isAnimationActive
+          animationBegin={0}
+          animationDuration={280}
+          animationEasing="ease-out"
+        >
+          {data.map((entry) => (
+            <Cell key={entry.status} fill={STATUS_COLORS[entry.status] || '#9ca3af'} />
+          ))}
+        </Pie>
+        <Tooltip isAnimationActive={false} />
+        <Legend />
+      </PieChart>
+    </ResponsiveContainer>
+  )
+})
 
 function App() {
   const [missions, setMissions] = useState([])
@@ -409,28 +480,7 @@ function App() {
 
         <div className="chart-card">
           <h2>Mission outcomes</h2>
-          <ResponsiveContainer width="100%" height={260}>
-            <PieChart>
-              <Pie
-                data={missionsByStatus}
-                dataKey="value"
-                nameKey="status"
-                cx="50%"
-                cy="50%"
-                outerRadius={80}
-                label={(entry) => `${entry.status} (${entry.value})`}
-              >
-                {missionsByStatus.map((entry) => (
-                  <Cell
-                    key={entry.status}
-                    fill={STATUS_COLORS[entry.status] || '#9ca3af'}
-                  />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
+          <MissionOutcomesChart data={missionsByStatus} />
         </div>
       </section>
 

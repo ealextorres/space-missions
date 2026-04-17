@@ -180,12 +180,7 @@
 }
 
 .filter-multiselect-panel {
-  position: absolute;
-  z-index: 30;
-  top: 100%;
-  left: 0;
-  right: 0;
-  margin-top: 4px;
+  box-sizing: border-box;
   padding: 6px 0;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -295,6 +290,13 @@
   border: 1px solid var(--border);
   padding: 12px 14px 4px;
   background: rgba(15, 23, 42, 0.01);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.chart-card:active {
+  cursor: grabbing;
 }
 
 .chart-card-drag {
@@ -302,13 +304,6 @@
   align-items: center;
   gap: 8px;
   margin: 0 0 8px;
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-}
-
-.chart-card-drag:active {
-  cursor: grabbing;
 }
 
 .chart-drag-handle {
@@ -331,6 +326,7 @@
 }
 
 .chart-card--dragging {
+  cursor: grabbing;
   box-shadow: var(--shadow);
   outline: 1px solid var(--accent-border);
 }

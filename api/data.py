@@ -92,15 +92,12 @@ def load_enriched_missions() -> List[Dict[str, Any]]:
     return out
 
 
-def _passes_multi_filter(
-    field_value: str,
-    flt: MultiFilterPayload,
-) -> Optional[bool]:
-    """Return True/False if row passes; None if filter state yields no rows (empty selection)."""
+def _passes_multi_filter(field_value: str, flt: MultiFilterPayload) -> bool:
+    """When no specific values are selected, behave like ALL (do not exclude rows)."""
     if flt["all"]:
         return True
     if not flt["values"]:
-        return None
+        return True
     return field_value in flt["values"]
 
 
@@ -126,26 +123,14 @@ def filter_missions(
         st = m.get("MissionStatus") or ""
         lc = m.get("_launch_country") or "Unknown"
 
-        r = _passes_multi_filter(c, company_filter)
-        if r is None:
+        if not _passes_multi_filter(c, company_filter):
             continue
-        if not r:
+        if not _passes_multi_filter(st, status_filter):
             continue
-        r = _passes_multi_filter(st, status_filter)
-        if r is None:
-            continue
-        if not r:
-            continue
-        r = _passes_multi_filter(lc, country_filter)
-        if r is None:
-            continue
-        if not r:
+        if not _passes_multi_filter(lc, country_filter):
             continue
         rs = get_normalized_rocket_status(m)
-        r = _passes_multi_filter(rs, rocket_status_filter)
-        if r is None:
-            continue
-        if not r:
+        if not _passes_multi_filter(rs, rocket_status_filter):
             continue
 
         md = m["_dt"]

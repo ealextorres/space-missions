@@ -124,10 +124,10 @@ def getSuccessRate(companyName: str) -> float:
   missions = _load_missions()
   normalized_company = _normalize_non_empty_string(companyName)
   if normalized_company is None:
-    return 0.0
+    return 0.00000
   company_missions = [m for m in missions if m.get("Company") == normalized_company]
   if not company_missions:
-    return 0.0
+    return 0.00000
   successes = sum(1 for m in company_missions if m.get("MissionStatus") == "Success")
   rate = (successes / len(company_missions)) * 100.0
   return float(f"{rate:.5f}")
@@ -275,13 +275,13 @@ def getAverageMissionsPerYear(startYear: int, endYear: int) -> float:
   start = _parse_year(startYear)
   end = _parse_year(endYear)
   if start is None or end is None:
-    return 0.0
+    return 0.00000
   if end < start:
-    start, end = end, start
+    return 0.00000
 
   years_span = end - start + 1
   if years_span <= 0:
-    return 0.0
+    return 0.00000
 
   counts_by_year: Dict[int, int] = defaultdict(int)
   for m in missions:

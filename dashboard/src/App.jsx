@@ -1,4 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   DndContext,
   PointerSensor,
@@ -38,30 +39,68 @@ const MISSION_STATUS_OPTIONS = ['Success', 'Failure', 'Partial Failure', 'Prelau
 
 const EMPTY_MULTI_FILTER = { all: true, values: [] }
 
+/** Local calendar YYYY-MM-DD for `<input type="date">`. */
+function formatDateForInput(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 /** Empty: use Vite dev proxy to same-origin `/api`. Set to e.g. http://127.0.0.1:8000 to call the API directly. */
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
 
-function useClickOutside(ref, handler, active) {
+function useClickOutsidePair(containerRef, panelRef, handler, active) {
   useEffect(() => {
     if (!active) return
     function onPointerDown(e) {
-      if (ref.current && !ref.current.contains(e.target)) handler()
+      if (containerRef.current?.contains(e.target)) return
+      if (panelRef.current?.contains(e.target)) return
+      handler()
     }
     document.addEventListener('pointerdown', onPointerDown, true)
     return () => document.removeEventListener('pointerdown', onPointerDown, true)
-  }, [ref, handler, active])
+  }, [containerRef, panelRef, handler, active])
 }
 
 function CheckboxMultiDropdown({ id, label, options, value, onChange }) {
   const [open, setOpen] = useState(false)
-  const wrapRef = useRef(null)
+  const [panelStyle, setPanelStyle] = useState(null)
+  const containerRef = useRef(null)
+  const triggerRef = useRef(null)
+  const panelRef = useRef(null)
   const close = useCallback(() => setOpen(false), [])
-  useClickOutside(wrapRef, close, open)
+  useClickOutsidePair(containerRef, panelRef, close, open)
 
-  const summary = value.all
-    ? 'All'
-    : value.values.length === 0
-      ? 'None selected'
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) {
+      setPanelStyle(null)
+      return
+    }
+    const update = () => {
+      const el = triggerRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      setPanelStyle({
+        position: 'fixed',
+        top: Math.round(r.bottom + 4),
+        left: Math.round(r.left),
+        width: Math.round(r.width),
+        zIndex: 1000,
+      })
+    }
+    update()
+    window.addEventListener('scroll', update, true)
+    window.addEventListener('resize', update)
+    return () => {
+      window.removeEventListener('scroll', update, true)
+      window.removeEventListener('resize', update)
+    }
+  }, [open])
+
+  const summary =
+    value.all || value.values.length === 0
+      ? 'All'
       : value.values.length === 1
         ? value.values[0]
         : `${value.values.length} selected`
@@ -83,11 +122,12 @@ function CheckboxMultiDropdown({ id, label, options, value, onChange }) {
   }
 
   return (
-    <div className="filter-group filter-multiselect" ref={wrapRef}>
+    <div className="filter-group filter-multiselect" ref={containerRef}>
       <span className="filter-multiselect-label" id={`${id}-label`}>
         {label}
       </span>
       <button
+        ref={triggerRef}
         type="button"
         id={id}
         className="filter-multiselect-trigger"
@@ -101,30 +141,40 @@ function CheckboxMultiDropdown({ id, label, options, value, onChange }) {
           ▾
         </span>
       </button>
-      {open && (
-        <div className="filter-multiselect-panel" role="listbox" aria-multiselectable="true">
-          <label className="filter-multiselect-row filter-multiselect-row--all">
-            <input
-              type="checkbox"
-              checked={value.all}
-              onChange={(e) => toggleAll(e.target.checked)}
-            />
-            <span>ALL</span>
-          </label>
-          <div className="filter-multiselect-scroll">
-            {options.map((opt) => (
-              <label key={opt} className="filter-multiselect-row">
-                <input
-                  type="checkbox"
-                  checked={!value.all && value.values.includes(opt)}
-                  onChange={(e) => toggleOption(opt, e.target.checked)}
-                />
-                <span>{opt}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
+      {open &&
+        panelStyle &&
+        createPortal(
+          <div
+            ref={panelRef}
+            className="filter-multiselect-panel"
+            style={panelStyle}
+            role="listbox"
+            aria-multiselectable="true"
+            aria-labelledby={`${id}-label`}
+          >
+            <label className="filter-multiselect-row filter-multiselect-row--all">
+              <input
+                type="checkbox"
+                checked={value.values.length === 0}
+                onChange={(e) => toggleAll(e.target.checked)}
+              />
+              <span>ALL</span>
+            </label>
+            <div className="filter-multiselect-scroll">
+              {options.map((opt) => (
+                <label key={opt} className="filter-multiselect-row">
+                  <input
+                    type="checkbox"
+                    checked={value.values.includes(opt)}
+                    onChange={(e) => toggleOption(opt, e.target.checked)}
+                  />
+                  <span>{opt}</span>
+                </label>
+              ))}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   )
 }
@@ -239,13 +289,11 @@ function SortableChartCard({ id, title, children }) {
       ref={setNodeRef}
       style={style}
       className={`chart-card${isDragging ? ' chart-card--dragging' : ''}`}
+      title="Drag to reorder charts"
+      {...attributes}
+      {...listeners}
     >
-      <div
-        className="chart-card-drag"
-        title="Drag to reorder charts"
-        {...attributes}
-        {...listeners}
-      >
+      <div className="chart-card-drag">
         <span className="chart-drag-handle" aria-hidden="true">
           ⋮⋮
         </span>
@@ -349,6 +397,11 @@ function App() {
             }
           })
         setMissions(enriched)
+        if (enriched.length > 0) {
+          const firstDate = enriched.reduce((min, m) => (m.DateObj < min.DateObj ? m : min)).DateObj
+          setStartDateFilter(formatDateForInput(firstDate))
+        }
+        setEndDateFilter(formatDateForInput(new Date()))
         setLoading(false)
       },
       error: (err) => {
@@ -423,20 +476,16 @@ function App() {
   const filteredMissions = useMemo(() => {
     return missions
       .filter((m) => {
-        if (!companyFilter.all) {
-          if (companyFilter.values.length === 0) return false
+        if (!companyFilter.all && companyFilter.values.length > 0) {
           if (!companyFilter.values.includes(m.Company)) return false
         }
-        if (!statusFilter.all) {
-          if (statusFilter.values.length === 0) return false
+        if (!statusFilter.all && statusFilter.values.length > 0) {
           if (!statusFilter.values.includes(m.MissionStatus)) return false
         }
-        if (!countryFilter.all) {
-          if (countryFilter.values.length === 0) return false
+        if (!countryFilter.all && countryFilter.values.length > 0) {
           if (!countryFilter.values.includes(m.LaunchCountry)) return false
         }
-        if (!rocketStatusFilter.all) {
-          if (rocketStatusFilter.values.length === 0) return false
+        if (!rocketStatusFilter.all && rocketStatusFilter.values.length > 0) {
           if (!rocketStatusFilter.values.includes(getNormalizedRocketStatus(m))) return false
         }
         if (startDateFilter) {

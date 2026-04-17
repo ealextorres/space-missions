@@ -35,9 +35,13 @@ The dashboard is implemented in `dashboard/src/App.jsx` and includes:
   - year span
 - **Charts** (drag-and-drop reorderable):
   - launches per year
+    - A line chart is used to show launch activity since this data is naturally ordered in time and the user will likely care about trend and change over the years. This kind of chart connects consecutive years to help the eye read continuity and rate of change. Bars would work for year-by-year counts, but a line emphasizes the time series story better.
   - top companies by mission count
+    - A bar chart is used here to show the mission count across a fixed number of companies. Vertical bars make ranking and relative size obvious, I.E. a taller bar means more missions. Since this graph shows a fixed number of top companies, vertical bars work well.
   - mission outcomes
+    - Mission outcome is an important part of any space mission. A pie chart is a great way to show the answer to “what share is success vs failure vs other?” at a glance. Since there are a small number of categories in this data set, a pie chart works best to show this comparison rather than something like a bar chart.
   - launches per country
+    - A bar chart is used here similarly to the Top Companies chart since they're both comparing counts across categories. However, for this data horizontal bars are used instead of vertical because country names vary in length and depending on the selected filters there many countries possible so horizontal bars makes reading the country names easier. Horizontal bars give long labels room on the Y-axis and make it easy to see that the longest bars show the most launches without crowding the bottom axis.
 - **Missions table**:
   - sortable columns
   - rocket status column
@@ -181,31 +185,27 @@ Use `getLoadValidationStats()` to inspect row-level quality counters such as dro
 ## Troubleshooting
 
 - **PowerShell blocks scripts**  
-  Run:
+Run:
   ```powershell
   Set-ExecutionPolicy -Scope Process Bypass
   .\start-dev.ps1
   ```
-
-- **`py` or `npm` command not found**  
-  Install Python/Node.js and reopen your terminal so PATH is refreshed.
-
+- `**py` or `npm` command not found**  
+Install Python/Node.js and reopen your terminal so PATH is refreshed.
 - **Port already in use (`8000` or `5173`)**  
-  Stop the process using that port, or start with a different port:
+Stop the process using that port, or start with a different port:
   ```powershell
   py -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8001
   ```
   Then point the frontend API base/proxy to the same backend port.
-
 - **Frontend starts but API calls fail**  
-  Confirm backend health:
+Confirm backend health:
   ```powershell
   curl http://127.0.0.1:8000/health
   ```
   Also verify `dashboard/vite.config.js` proxy target matches the backend port.
-
 - **Dependency/import errors (`ModuleNotFoundError`)**  
-  Reinstall API deps:
+Reinstall API deps:
   ```powershell
   py -m pip install -r requirements-api.txt
   ```
@@ -214,11 +214,11 @@ Use `getLoadValidationStats()` to inspect row-level quality counters such as dro
   cd dashboard
   npm install
   ```
-
 - **Dashboard looks stale after CSV/path changes**  
-  `analysis.py` caches loaded rows. If testing in Python REPL/scripts:
+`analysis.py` caches loaded rows. If testing in Python REPL/scripts:
   ```python
   import analysis
   analysis._load_missions.cache_clear()
   ```
   Restarting uvicorn also refreshes state.
+

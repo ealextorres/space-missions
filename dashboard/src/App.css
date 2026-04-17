@@ -64,13 +64,55 @@
 
 .filters {
   display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
+  flex-wrap: nowrap;
+  gap: 10px 12px;
   align-items: flex-end;
   padding: 16px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: rgba(15, 23, 42, 0.02);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.filters .filter-group {
+  min-width: 0;
+}
+
+.filters .filter-group.filter-multiselect {
+  flex: 1 1 0;
+  min-width: 6.5rem;
+  max-width: 16rem;
+}
+
+.filters > .filter-group:not(.filter-multiselect) {
+  flex: 0 0 auto;
+  min-width: 8.75rem;
+  max-width: 10.5rem;
+}
+
+.filters .filter-multiselect-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.filters .filter-multiselect-trigger {
+  padding: 5px 8px;
+  font-size: 13px;
+}
+
+.filters .filter-group:not(.filter-multiselect) label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.filters .filter-group input[type='date'] {
+  padding: 5px 8px;
+  font-size: 13px;
+}
+
+.filters .clear-filters {
+  flex-shrink: 0;
 }
 
 .filter-group {
@@ -487,16 +529,29 @@ tbody tr:nth-child(even) {
 
   .filters {
     flex-direction: column;
+    flex-wrap: wrap;
     align-items: flex-start;
     text-align: left;
     width: 100%;
     box-sizing: border-box;
+    overflow-x: visible;
   }
 
   .filters .filter-group {
     width: 100%;
     max-width: 100%;
+    min-width: 0;
     align-items: flex-start;
+  }
+
+  .filters .filter-group.filter-multiselect {
+    flex: none;
+    max-width: 100%;
+  }
+
+  .filters > .filter-group:not(.filter-multiselect) {
+    flex: none;
+    max-width: 100%;
   }
 
   .filters .filter-group select,

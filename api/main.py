@@ -49,6 +49,7 @@ def dashboard_aggregate(body: DashboardAggregateRequest):
         {"all": body.company_filter.all, "values": body.company_filter.values},
         {"all": body.status_filter.all, "values": body.status_filter.values},
         {"all": body.country_filter.all, "values": body.country_filter.values},
+        {"all": body.rocket_status_filter.all, "values": body.rocket_status_filter.values},
         body.start_date.strip(),
         body.end_date.strip(),
     )

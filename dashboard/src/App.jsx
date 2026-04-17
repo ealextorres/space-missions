@@ -152,6 +152,13 @@ function getLaunchCountry(location) {
   return raw
 }
 
+/** Matches table display: blank RocketStatus shows as N/A. */
+function getNormalizedRocketStatus(row) {
+  const v = row?.RocketStatus
+  if (v != null && typeof v === 'string' && v.trim()) return v.trim()
+  return 'N/A'
+}
+
 const RADIAN = Math.PI / 180
 
 /** External % labels with elbow lines so slice labels do not stack on the pie. */
@@ -288,6 +295,7 @@ function App() {
   const [companyFilter, setCompanyFilter] = useState(EMPTY_MULTI_FILTER)
   const [statusFilter, setStatusFilter] = useState(EMPTY_MULTI_FILTER)
   const [countryFilter, setCountryFilter] = useState(EMPTY_MULTI_FILTER)
+  const [rocketStatusFilter, setRocketStatusFilter] = useState(EMPTY_MULTI_FILTER)
   const [startDateFilter, setStartDateFilter] = useState('')
   const [endDateFilter, setEndDateFilter] = useState('')
   const [sortField, setSortField] = useState('Date')
@@ -362,6 +370,7 @@ function App() {
             company_filter: companyFilter,
             status_filter: statusFilter,
             country_filter: countryFilter,
+            rocket_status_filter: rocketStatusFilter,
             start_date: startDateFilter,
             end_date: endDateFilter,
           }),
@@ -384,6 +393,7 @@ function App() {
     companyFilter,
     statusFilter,
     countryFilter,
+    rocketStatusFilter,
     startDateFilter,
     endDateFilter,
   ])
@@ -395,6 +405,11 @@ function App() {
 
   const countryOptions = useMemo(
     () => Array.from(new Set(missions.map((m) => m.LaunchCountry))).sort(),
+    [missions],
+  )
+
+  const rocketStatusOptions = useMemo(
+    () => Array.from(new Set(missions.map((m) => getNormalizedRocketStatus(m)))).sort(),
     [missions],
   )
 
@@ -419,6 +434,10 @@ function App() {
         if (!countryFilter.all) {
           if (countryFilter.values.length === 0) return false
           if (!countryFilter.values.includes(m.LaunchCountry)) return false
+        }
+        if (!rocketStatusFilter.all) {
+          if (rocketStatusFilter.values.length === 0) return false
+          if (!rocketStatusFilter.values.includes(getNormalizedRocketStatus(m))) return false
         }
         if (startDateFilter) {
           const start = new Date(`${startDateFilter}T00:00:00`)
@@ -451,6 +470,7 @@ function App() {
     companyFilter,
     statusFilter,
     countryFilter,
+    rocketStatusFilter,
     startDateFilter,
     endDateFilter,
     sortField,
@@ -736,6 +756,17 @@ function App() {
           }}
         />
 
+        <CheckboxMultiDropdown
+          id="filter-rocket-status"
+          label="Rocket status"
+          options={rocketStatusOptions}
+          value={rocketStatusFilter}
+          onChange={(next) => {
+            setRocketStatusFilter(next)
+            setPage(1)
+          }}
+        />
+
         <div className="filter-group">
           <label htmlFor="start-date">Start date</label>
           <input
@@ -769,6 +800,7 @@ function App() {
             setCompanyFilter(EMPTY_MULTI_FILTER)
             setStatusFilter(EMPTY_MULTI_FILTER)
             setCountryFilter(EMPTY_MULTI_FILTER)
+            setRocketStatusFilter(EMPTY_MULTI_FILTER)
             setStartDateFilter('')
             setEndDateFilter('')
             setPage(1)
@@ -835,6 +867,7 @@ function App() {
                 </th>
                 <th>Mission</th>
                 <th>Rocket</th>
+                <th>Rocket status</th>
                 <th onClick={() => handleSort('Price')}>
                   Price {sortField === 'Price' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                 </th>
@@ -856,6 +889,7 @@ function App() {
                   <td>{m.Company}</td>
                   <td>{m.Mission}</td>
                   <td>{m.Rocket}</td>
+                  <td>{getNormalizedRocketStatus(m)}</td>
                   <td>{formatPrice(m.Price)}</td>
                   <td>{m.Location}</td>
                   <td>

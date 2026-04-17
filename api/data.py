@@ -50,6 +50,13 @@ def get_launch_country(location: Optional[str]) -> str:
     return raw
 
 
+def get_normalized_rocket_status(row: Dict[str, Any]) -> str:
+    raw = row.get("RocketStatus")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return "N/A"
+
+
 def _parse_mission_datetime(row: Dict[str, str]) -> Optional[datetime]:
     date_str = row.get("Date")
     if not date_str:
@@ -102,6 +109,7 @@ def filter_missions(
     company_filter: MultiFilterPayload,
     status_filter: MultiFilterPayload,
     country_filter: MultiFilterPayload,
+    rocket_status_filter: MultiFilterPayload,
     start_date: str,
     end_date: str,
 ) -> List[Dict[str, Any]]:
@@ -129,6 +137,12 @@ def filter_missions(
         if not r:
             continue
         r = _passes_multi_filter(lc, country_filter)
+        if r is None:
+            continue
+        if not r:
+            continue
+        rs = get_normalized_rocket_status(m)
+        r = _passes_multi_filter(rs, rocket_status_filter)
         if r is None:
             continue
         if not r:

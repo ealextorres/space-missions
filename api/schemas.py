@@ -14,5 +14,6 @@ class DashboardAggregateRequest(BaseModel):
     company_filter: MultiFilterModel = Field(default_factory=MultiFilterModel)
     status_filter: MultiFilterModel = Field(default_factory=MultiFilterModel)
     country_filter: MultiFilterModel = Field(default_factory=MultiFilterModel)
+    rocket_status_filter: MultiFilterModel = Field(default_factory=MultiFilterModel)
     start_date: str = ""
     end_date: str = ""

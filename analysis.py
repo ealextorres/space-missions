@@ -1,28 +1,119 @@
 import csv
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import date, datetime
 from functools import lru_cache
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 CSV_PATH = "space_missions.csv"
+REQUIRED_COLUMNS = ("Date", "Company", "MissionStatus", "Mission", "Rocket")
+NORMALIZED_TEXT_FIELDS = ("Company", "MissionStatus", "Rocket", "Mission", "Location")
+KNOWN_MISSION_STATUSES = (
+  "Success",
+  "Failure",
+  "Partial Failure",
+  "Prelaunch Failure",
+)
+_KNOWN_MISSION_STATUSES_SET = set(KNOWN_MISSION_STATUSES)
+_MISSION_STATUS_ALIASES = {
+  "success": "Success",
+  "failure": "Failure",
+  "partial failure": "Partial Failure",
+  "prelaunch failure": "Prelaunch Failure",
+}
+_last_load_stats: Dict[str, object] = {}
+
+
+def _empty_load_stats() -> Dict[str, object]:
+  return {
+    "missing_required_columns": [],
+    "total_rows": 0,
+    "loaded_rows": 0,
+    "dropped_rows": 0,
+    "missing_date_count": 0,
+    "invalid_date_count": 0,
+    "unknown_status_count": 0,
+  }
+
+
+def _parse_iso_date(value: str) -> Optional[date]:
+  if not isinstance(value, str):
+    return None
+  normalized = value.strip()
+  if not normalized:
+    return None
+  try:
+    return datetime.strptime(normalized, "%Y-%m-%d").date()
+  except ValueError:
+    return None
+
+
+def _normalize_mission_status(value: str) -> str:
+  normalized = _normalize_non_empty_string(value)
+  if normalized is None:
+    return "Unknown"
+  alias = _MISSION_STATUS_ALIASES.get(normalized.casefold())
+  if alias is not None:
+    return alias
+  if normalized in _KNOWN_MISSION_STATUSES_SET:
+    return normalized
+  return "Unknown"
 
 
 @lru_cache(maxsize=1)
 def _load_missions() -> List[Dict[str, str]]:
+  global _last_load_stats
+  stats = _empty_load_stats()
   missions: List[Dict[str, str]] = []
   with open(CSV_PATH, encoding="utf-8") as f:
     reader = csv.DictReader(f)
+    fieldnames = [name.strip() for name in (reader.fieldnames or []) if isinstance(name, str)]
+    missing_required = [name for name in REQUIRED_COLUMNS if name not in fieldnames]
+    if missing_required:
+      stats["missing_required_columns"] = missing_required
+      _last_load_stats = stats
+      return missions
+
     for row in reader:
-      if not row.get("Date"):
+      stats["total_rows"] += 1
+      normalized_row = {
+        key: (value.strip() if isinstance(value, str) else value) for key, value in row.items()
+      }
+      for field in NORMALIZED_TEXT_FIELDS:
+        value = normalized_row.get(field)
+        normalized_row[field] = value if isinstance(value, str) else ""
+
+      if _parse_iso_date(normalized_row.get("Date", "")) is None:
+        if normalized_row.get("Date"):
+          stats["invalid_date_count"] += 1
+        else:
+          stats["missing_date_count"] += 1
+        stats["dropped_rows"] += 1
         continue
-      missions.append(row)
+      normalized_row["MissionStatus"] = _normalize_mission_status(normalized_row.get("MissionStatus"))
+      if normalized_row["MissionStatus"] == "Unknown":
+        stats["unknown_status_count"] += 1
+      missions.append(normalized_row)
+      stats["loaded_rows"] += 1
+  _last_load_stats = stats
   return missions
+
+
+def getLoadValidationStats() -> Dict[str, object]:
+  _load_missions()
+  return dict(_last_load_stats)
+
+
+def GetLoadValidationStats() -> Dict[str, object]:
+  return getLoadValidationStats()
 
 
 def getMissionCountByCompany(companyName: str) -> int:
   missions = _load_missions()
-  return sum(1 for m in missions if m.get("Company") == companyName)
+  normalized_company = _normalize_non_empty_string(companyName)
+  if normalized_company is None:
+    return 0
+  return sum(1 for m in missions if m.get("Company") == normalized_company)
 
 
 def GetMissionCountByCompany(companyName: str) -> int:
@@ -31,7 +122,10 @@ def GetMissionCountByCompany(companyName: str) -> int:
 
 def getSuccessRate(companyName: str) -> float:
   missions = _load_missions()
-  company_missions = [m for m in missions if m.get("Company") == companyName]
+  normalized_company = _normalize_non_empty_string(companyName)
+  if normalized_company is None:
+    return 0.0
+  company_missions = [m for m in missions if m.get("Company") == normalized_company]
   if not company_missions:
     return 0.0
   successes = sum(1 for m in company_missions if m.get("MissionStatus") == "Success")
@@ -43,17 +137,49 @@ def GetSuccessRate(companyName: str) -> float:
   return getSuccessRate(companyName)
 
 
+def _parse_year(value: int) -> Optional[int]:
+  try:
+    year = int(value)
+  except (TypeError, ValueError):
+    return None
+  if year < 1 or year > 9999:
+    return None
+  return year
+
+
+def _parse_non_negative_int(value: int) -> Optional[int]:
+  try:
+    parsed = int(value)
+  except (TypeError, ValueError):
+    return None
+  return parsed if parsed >= 0 else None
+
+
+def _normalize_non_empty_string(value: str) -> Optional[str]:
+  if not isinstance(value, str):
+    return None
+  normalized = value.strip()
+  return normalized if normalized else None
+
+
+def _parse_mission_row_date(row: Dict[str, str]) -> Optional[date]:
+  return _parse_iso_date(row.get("Date"))
+
+
 def getMissionsByDateRange(startDate: str, endDate: str) -> List[str]:
   missions = _load_missions()
-  start = datetime.strptime(startDate, "%Y-%m-%d").date()
-  end = datetime.strptime(endDate, "%Y-%m-%d").date()
+  start = _parse_iso_date(startDate)
+  end = _parse_iso_date(endDate)
+  if start is None or end is None:
+    return []
+  if start > end:
+    return []
 
-  result: List[Tuple[datetime, str]] = []
+  result: List[Tuple[date, str]] = []
   for m in missions:
-    date_str = m.get("Date")
-    if not date_str:
+    date_obj = _parse_mission_row_date(m)
+    if date_obj is None:
       continue
-    date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
     if start <= date_obj <= end:
       result.append((date_obj, m.get("Mission", "")))
 
@@ -67,6 +193,9 @@ def GetMissionsByDateRange(startDate: str, endDate: str) -> List[str]:
 
 def getTopCompaniesByMissionCount(n: int) -> List[Tuple[str, int]]:
   missions = _load_missions()
+  limit = _parse_non_negative_int(n)
+  if limit is None or limit == 0:
+    return []
   counter: Counter[str] = Counter()
   for m in missions:
     company = m.get("Company")
@@ -75,7 +204,7 @@ def getTopCompaniesByMissionCount(n: int) -> List[Tuple[str, int]]:
 
   items = list(counter.items())
   items.sort(key=lambda x: (-x[1], x[0]))
-  return items[: max(0, n)]
+  return items[:limit]
 
 
 def GetTopCompaniesByMissionCount(n: int) -> List[Tuple[str, int]]:
@@ -104,12 +233,17 @@ def GetMissionStatusCount() -> Dict[str, int]:
 
 def getMissionsByYear(year: int) -> int:
   missions = _load_missions()
-  return sum(
-    1
-    for m in missions
-    if m.get("Date")
-    and datetime.strptime(m["Date"], "%Y-%m-%d").year == int(year)
-  )
+  parsed_year = _parse_year(year)
+  if parsed_year is None:
+    return 0
+  count = 0
+  for m in missions:
+    date_obj = _parse_mission_row_date(m)
+    if date_obj is None:
+      continue
+    if date_obj.year == parsed_year:
+      count += 1
+  return count
 
 
 def GetMissionsByYear(year: int) -> int:
@@ -138,8 +272,10 @@ def GetMostUsedRocket() -> str:
 
 def getAverageMissionsPerYear(startYear: int, endYear: int) -> float:
   missions = _load_missions()
-  start = int(startYear)
-  end = int(endYear)
+  start = _parse_year(startYear)
+  end = _parse_year(endYear)
+  if start is None or end is None:
+    return 0.0
   if end < start:
     start, end = end, start
 
@@ -149,9 +285,10 @@ def getAverageMissionsPerYear(startYear: int, endYear: int) -> float:
 
   counts_by_year: Dict[int, int] = defaultdict(int)
   for m in missions:
-    if not m.get("Date"):
+    date_obj = _parse_mission_row_date(m)
+    if date_obj is None:
       continue
-    year = datetime.strptime(m["Date"], "%Y-%m-%d").year
+    year = date_obj.year
     if start <= year <= end:
       counts_by_year[year] += 1
 

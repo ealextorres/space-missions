@@ -38,6 +38,9 @@ const MISSION_STATUS_OPTIONS = ['Success', 'Failure', 'Partial Failure', 'Prelau
 
 const EMPTY_MULTI_FILTER = { all: true, values: [] }
 
+/** Empty: use Vite dev proxy to same-origin `/api`. Set to e.g. http://127.0.0.1:8000 to call the API directly. */
+const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
+
 function useClickOutside(ref, handler, active) {
   useEffect(() => {
     if (!active) return
@@ -292,6 +295,7 @@ function App() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(15)
   const [chartOrder, setChartOrder] = useState(parseChartOrderFromStorage)
+  const [apiAggregate, setApiAggregate] = useState(null)
 
   const chartSensors = useSensors(
     useSensor(PointerSensor, {
@@ -345,6 +349,44 @@ function App() {
       },
     })
   }, [])
+
+  useEffect(() => {
+    if (loading) return
+    const ctrl = new AbortController()
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/dashboard/aggregate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            company_filter: companyFilter,
+            status_filter: statusFilter,
+            country_filter: countryFilter,
+            start_date: startDateFilter,
+            end_date: endDateFilter,
+          }),
+          signal: ctrl.signal,
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const data = await res.json()
+        setApiAggregate(data)
+      } catch (e) {
+        if (e?.name === 'AbortError') return
+        setApiAggregate(null)
+      }
+    }, 300)
+    return () => {
+      window.clearTimeout(timer)
+      ctrl.abort()
+    }
+  }, [
+    loading,
+    companyFilter,
+    statusFilter,
+    countryFilter,
+    startDateFilter,
+    endDateFilter,
+  ])
 
   const companyOptions = useMemo(
     () => Array.from(new Set(missions.map((m) => m.Company))).sort(),
@@ -415,23 +457,23 @@ function App() {
     sortDirection,
   ])
 
-  const totalMissions = filteredMissions.length
-  const successfulMissions = filteredMissions.filter(
+  const clientTotalMissions = filteredMissions.length
+  const clientSuccessfulMissions = filteredMissions.filter(
     (m) => m.MissionStatus === 'Success',
   ).length
-  const overallSuccessRate = totalMissions
-    ? ((successfulMissions / totalMissions) * 100).toFixed(2)
+  const clientOverallSuccessRate = clientTotalMissions
+    ? ((clientSuccessfulMissions / clientTotalMissions) * 100).toFixed(2)
     : '0.00'
 
-  const uniqueCompanies = new Set(filteredMissions.map((m) => m.Company)).size
+  const clientUniqueCompanies = new Set(filteredMissions.map((m) => m.Company)).size
 
-  const yearRange = useMemo(() => {
+  const clientYearRange = useMemo(() => {
     if (!filteredMissions.length) return ''
     const years = filteredMissions.map((m) => m.Year)
     return `${Math.min(...years)}–${Math.max(...years)}`
   }, [filteredMissions])
 
-  const missionsByYear = useMemo(() => {
+  const clientMissionsByYear = useMemo(() => {
     const counts = new Map()
     filteredMissions.forEach((m) => {
       counts.set(m.Year, (counts.get(m.Year) || 0) + 1)
@@ -441,7 +483,7 @@ function App() {
       .map(([year, count]) => ({ year, count }))
   }, [filteredMissions])
 
-  const missionsByCompany = useMemo(() => {
+  const clientMissionsByCompany = useMemo(() => {
     const counts = new Map()
     filteredMissions.forEach((m) => {
       counts.set(m.Company, (counts.get(m.Company) || 0) + 1)
@@ -452,7 +494,7 @@ function App() {
       .slice(0, 10)
   }, [filteredMissions])
 
-  const missionsByStatus = useMemo(() => {
+  const clientMissionsByStatus = useMemo(() => {
     const counts = new Map()
     filteredMissions.forEach((m) => {
       counts.set(m.MissionStatus, (counts.get(m.MissionStatus) || 0) + 1)
@@ -474,7 +516,7 @@ function App() {
     })
   }
 
-  const missionsByLaunchCountry = useMemo(() => {
+  const clientMissionsByLaunchCountry = useMemo(() => {
     const TOP_N = 12
     const counts = new Map()
     filteredMissions.forEach((m) => {
@@ -491,6 +533,17 @@ function App() {
     if (otherSum > 0) top.push({ name: 'Other', count: otherSum })
     return [...top].reverse()
   }, [filteredMissions])
+
+  const totalMissions = apiAggregate != null ? apiAggregate.total_missions : clientTotalMissions
+  const overallSuccessRate =
+    apiAggregate != null ? apiAggregate.overall_success_rate : clientOverallSuccessRate
+  const uniqueCompanies = apiAggregate != null ? apiAggregate.unique_companies : clientUniqueCompanies
+  const yearRange = apiAggregate != null ? apiAggregate.year_range : clientYearRange
+  const missionsByYear = apiAggregate != null ? apiAggregate.missions_by_year : clientMissionsByYear
+  const missionsByCompany = apiAggregate != null ? apiAggregate.missions_by_company : clientMissionsByCompany
+  const missionsByStatus = apiAggregate != null ? apiAggregate.missions_by_status : clientMissionsByStatus
+  const missionsByLaunchCountry =
+    apiAggregate != null ? apiAggregate.missions_by_launch_country : clientMissionsByLaunchCountry
 
   const totalPages = Math.max(1, Math.ceil(filteredMissions.length / pageSize))
   const currentPage = Math.min(page, totalPages)
